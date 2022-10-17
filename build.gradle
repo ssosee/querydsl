@@ -8,6 +8,8 @@ group = 'study'
 version = '0.0.1-SNAPSHOT'
 sourceCompatibility = '11'
 
+ext["hibernate.version"] = "5.6.5.Final"
+
 configurations {
     compileOnly {
         extendsFrom annotationProcessor
@@ -19,6 +21,13 @@ repositories {
 }
 
 dependencies {
+    //Querydsl 추가
+    implementation 'com.querydsl:querydsl-jpa'
+    annotationProcessor "com.querydsl:querydsl-apt:${dependencyManagement.importedProperties['querydsl.version']}:jpa"
+    annotationProcessor "jakarta.annotation:jakarta.annotation-api"
+    annotationProcessor "jakarta.persistence:jakarta.persistence-api"
+    implementation 'com.github.gavlyukovskiy:p6spy-spring-boot-starter:1.5.8'
+
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
     implementation 'org.springframework.boot:spring-boot-starter-web'
     compileOnly 'org.projectlombok:lombok'
@@ -29,4 +38,9 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+//Querydsl 추가, 자동 생성된 Q클래스 gradle clean으로 제거
+clean {
+    delete file('src/main/generated')
 }
