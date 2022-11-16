@@ -2,6 +2,7 @@ package study.querydsl;
 
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import org.aspectj.lang.annotation.Before;
 import org.assertj.core.api.Assertions;
@@ -19,6 +20,7 @@ import javax.persistence.PersistenceContext;
 import javax.persistence.PersistenceUnit;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.*;
 import static study.querydsl.entitiy.QMember.*;
 import static study.querydsl.entitiy.QTeam.team;
 
@@ -64,7 +66,7 @@ public class QuerydslBasicTest {
                 .setParameter("username", "member1")
                 .getSingleResult();
 
-        Assertions.assertThat(findMember.getUsername()).isEqualTo("member1");
+        assertThat(findMember.getUsername()).isEqualTo("member1");
     }
 
     @Test
@@ -76,7 +78,7 @@ public class QuerydslBasicTest {
                 .where(member.username.eq("member2"))
                 .fetchOne();
 
-        Assertions.assertThat(findMember.getUsername()).isEqualTo("member2");
+        assertThat(findMember.getUsername()).isEqualTo("member2");
     }
 
     @Test
@@ -87,7 +89,7 @@ public class QuerydslBasicTest {
                         .and(member.age.eq(10)))
                 .fetchOne();
 
-        Assertions.assertThat(findMember.getUsername()).isEqualTo("member1");
+        assertThat(findMember.getUsername()).isEqualTo("member1");
     }
 
     @Test
@@ -100,7 +102,7 @@ public class QuerydslBasicTest {
                 )
                 .fetchOne();
 
-        Assertions.assertThat(findMember.getUsername()).isEqualTo("member1");
+        assertThat(findMember.getUsername()).isEqualTo("member1");
     }
 
     @Test
@@ -146,9 +148,9 @@ public class QuerydslBasicTest {
                 .orderBy(member.age.desc(), member.username.asc().nullsLast())
                 .fetch();
 
-        Assertions.assertThat(result.get(0).getUsername()).isEqualTo("member5");
-        Assertions.assertThat(result.get(1).getUsername()).isEqualTo("member6");
-        Assertions.assertThat(result.get(2).getUsername()).isNull();
+        assertThat(result.get(0).getUsername()).isEqualTo("member5");
+        assertThat(result.get(1).getUsername()).isEqualTo("member6");
+        assertThat(result.get(2).getUsername()).isNull();
     }
 
     @Test
@@ -160,10 +162,10 @@ public class QuerydslBasicTest {
                 .limit(2)
                 .fetchResults();
 
-        Assertions.assertThat(results.getResults().size()).isEqualTo(2);
-        Assertions.assertThat(results.getTotal()).isEqualTo(4);
-        Assertions.assertThat(results.getOffset()).isEqualTo(1);
-        Assertions.assertThat(results.getLimit()).isEqualTo(2);
+        assertThat(results.getResults().size()).isEqualTo(2);
+        assertThat(results.getTotal()).isEqualTo(4);
+        assertThat(results.getOffset()).isEqualTo(1);
+        assertThat(results.getLimit()).isEqualTo(2);
     }
 
     @Test
@@ -180,11 +182,11 @@ public class QuerydslBasicTest {
                 .fetch();
 
         Tuple tuple = result.get(0);
-        Assertions.assertThat(tuple.get(member.count())).isEqualTo(4);
-        Assertions.assertThat(tuple.get(member.age.avg())).isEqualTo(25);
-        Assertions.assertThat(tuple.get(member.age.sum())).isEqualTo(100);
-        Assertions.assertThat(tuple.get(member.age.max())).isEqualTo(40);
-        Assertions.assertThat(tuple.get(member.age.min())).isEqualTo(10);
+        assertThat(tuple.get(member.count())).isEqualTo(4);
+        assertThat(tuple.get(member.age.avg())).isEqualTo(25);
+        assertThat(tuple.get(member.age.sum())).isEqualTo(100);
+        assertThat(tuple.get(member.age.max())).isEqualTo(40);
+        assertThat(tuple.get(member.age.min())).isEqualTo(10);
     }
 
     /**
@@ -204,8 +206,8 @@ public class QuerydslBasicTest {
         Tuple teamA = result.get(0);
         Tuple teamB = result.get(1);
         //then
-        Assertions.assertThat(teamA.get(team.name)).isEqualTo("teamA");
-        Assertions.assertThat(teamA.get(member.age.avg())).isEqualTo(15);
+        assertThat(teamA.get(team.name)).isEqualTo("teamA");
+        assertThat(teamA.get(member.age.avg())).isEqualTo(15);
     }
 
     /**
@@ -247,7 +249,7 @@ public class QuerydslBasicTest {
         //when
 
         //then
-        Assertions.assertThat(result)
+        assertThat(result)
                 .extracting("username")
                 .containsExactly("member1", "member2");
     }
@@ -285,7 +287,7 @@ public class QuerydslBasicTest {
         //when
 
         //then
-        Assertions.assertThat(result)
+        assertThat(result)
                 .extracting("username")
                 .containsExactly("teamA", "teamB");
     }
@@ -423,7 +425,7 @@ public class QuerydslBasicTest {
                 .fetchOne();
 
         boolean loaded = emf.getPersistenceUnitUtil().isLoaded(findMember.getTeam());
-        Assertions.assertThat(loaded).as("패치 조인 미적용").isFalse();
+        assertThat(loaded).as("패치 조인 미적용").isFalse();
         //then
     }
 
@@ -456,7 +458,162 @@ public class QuerydslBasicTest {
          */
 
         boolean loaded = emf.getPersistenceUnitUtil().isLoaded(findMember.getTeam());
-        Assertions.assertThat(loaded).as("패치 조인 적용").isTrue();
+        assertThat(loaded).as("패치 조인 적용").isTrue();
+        //then
+    }
+
+    /**
+     * 나이가 가장 많은 회원 조회
+     */
+    @Test
+    void subQuery() throws Exception {
+
+        QMember memberSub = new QMember("memberSub");
+
+        //given
+        List<Member> result = queryFactory.selectFrom(member)
+                .where(member.age.eq(
+                        JPAExpressions
+                                .select(memberSub.age.max())
+                                .from(memberSub)
+                ))
+                .fetch();
+        //when
+        /**
+         * select
+         *             member0_.id as id1_1_,
+         *             member0_.age as age2_1_,
+         *             member0_.team_id as team_id4_1_,
+         *             member0_.username as username3_1_
+         *         from
+         *             member member0_
+         *         where
+         *             member0_.age=(
+         *                 select
+         *                     max(member1_.age)
+         *                 from
+         *                     member member1_
+         *             )
+         */
+        
+        //then
+        assertThat(result).extracting("age").containsExactly(40);
+    }
+
+    /**
+     * 나이가 평균 이상인 회원
+     */
+    @Test
+    void subQueryGoe() throws Exception {
+        //given
+        QMember memberSub = new QMember("memberSub");
+
+        List<Member> result = queryFactory.selectFrom(member)
+                .where(member.age.goe(
+                        JPAExpressions
+                                .select(memberSub.age.avg())
+                                .from(memberSub)
+                ))
+                .fetch();
+        /**
+         * select
+         *             member0_.id as id1_1_,
+         *             member0_.age as age2_1_,
+         *             member0_.team_id as team_id4_1_,
+         *             member0_.username as username3_1_
+         *         from
+         *             member member0_
+         *         where
+         *             member0_.age>=(
+         *                 select
+         *                     avg(cast(member1_.age as double))
+         *                 from
+         *                     member member1_
+         *             )
+         */
+        //when
+
+        //then
+        assertThat(result).extracting("age")
+                .containsExactly(30, 40);
+    }
+
+    @Test
+    void subQueryIn() throws Exception {
+
+        //given
+        QMember memberSub = new QMember("memberSub");
+
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .where(member.age.in(
+                        JPAExpressions
+                                .select(memberSub.age)
+                                .from(memberSub)
+                                .where(memberSub.age.gt(10))
+                ))
+                .fetch();
+        /**
+         * select
+         *             member0_.id as id1_1_,
+         *             member0_.age as age2_1_,
+         *             member0_.team_id as team_id4_1_,
+         *             member0_.username as username3_1_
+         *         from
+         *             member member0_
+         *         where
+         *             member0_.age in (
+         *                 select
+         *                     member1_.age
+         *                 from
+         *                     member member1_
+         *                 where
+         *                     member1_.age>?
+         *             )
+         */
+        //when
+
+        //then
+        assertThat(result).extracting("age")
+                .containsExactly(20, 30, 40);
+    }
+
+    /**
+     * select 절에 subQuery
+     */
+    @Test
+    void selectSubQuery() throws Exception {
+        //given
+        QMember memberSub = new QMember("memberSub");
+
+        List<Tuple> result = queryFactory
+                .select(member.username,
+                        JPAExpressions
+                                .select(memberSub.age.avg())
+                                .from(memberSub)
+                ).from(member)
+                .fetch();
+
+        /**
+         * select
+         *             member0_.username as col_0_0_,
+         *             (select
+         *                 avg(cast(member1_.age as double))
+         *             from
+         *                 member member1_) as col_1_0_
+         *         from
+         *             member member0_
+         */
+
+        //when
+        for (Tuple tuple : result) {
+            System.out.println("tuple = " + tuple.get(member.username));
+            System.out.println("tuple.get(JPAExpressions.select(memberSub.age.avg())) = " +
+                    tuple.get(JPAExpressions.select(memberSub.age.avg())
+                            .from(memberSub)));
+        }
+
+
         //then
     }
 }
