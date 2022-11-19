@@ -3,6 +3,8 @@ package study.querydsl;
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.Expression;
+import com.querydsl.core.types.ExpressionUtils;
+import com.querydsl.core.types.Projections;
 import com.querydsl.core.types.dsl.CaseBuilder;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.core.types.dsl.NumberExpression;
@@ -14,6 +16,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
+import study.querydsl.dto.MemberDto;
+import study.querydsl.dto.UserDto;
 import study.querydsl.entitiy.Member;
 import study.querydsl.entitiy.QMember;
 import study.querydsl.entitiy.Team;
@@ -791,4 +795,164 @@ public class QuerydslBasicTest {
             System.out.println("s = " + s);
         }
     }
+
+    @Test
+    void simpleProjection() throws Exception {
+        //given
+        List<String> result = queryFactory
+                .select(member.username)
+                .from(member)
+                .fetch();
+
+        for (String s : result) {
+            System.out.println("s = " + s);
+        }
+        //when
+
+        //then
+    }
+
+    /**
+     * 튜플 조회
+     * 프로젝션 대상이 둘 이상일 때 사용
+     */
+    @Test
+    void tupleProjection() throws Exception {
+        //given
+        List<Tuple> result = queryFactory
+                .select(member.username, member.age)
+                .from(member)
+                .fetch();
+
+        /**
+         * select
+         *             member0_.username as col_0_0_,
+         *             member0_.age as col_1_0_
+         *         from
+         *             member member0_
+         */
+
+        //when
+        for (Tuple tuple : result) {
+            String username = tuple.get(member.username);
+            System.out.println("username = " + username);
+            Integer age = tuple.get(member.age);
+            System.out.println("age = " + age);
+        }
+
+        //then
+    }
+
+    /**
+     * 1. 순수 JPA에서 DTO를 조회할 때는 new 명령어를 사용해야함
+     * 2. DTO의 package이름을 다 적어줘야해서 지저분함
+     * 3. 생성자 방식만 지원함
+     */
+    @Test
+    void findDtoByJpql() throws Exception {
+        //given
+        List<MemberDto> memberDtos = em.createQuery("select new study.querydsl.dto.MemberDto(m.username, m.age) from Member m", MemberDto.class)
+                .getResultList();
+        //when
+        for (MemberDto memberDto : memberDtos) {
+            System.out.println(memberDto);
+        }
+        //then
+    }
+
+    /**
+     * Querydsl 빈 생성(Bean population)
+     * 프로퍼티 접근 - Setter
+     */
+    @Test
+    void findDtoBySetter() throws Exception {
+        //given
+        List<MemberDto> result = queryFactory
+                .select(Projections.bean(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member)
+                .fetch();
+        //when
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+
+        //then
+    }
+
+    /**
+     * Querydsl 빈 생성(Bean population)
+     * 필드 직접 접근(필드명이 일치해야함)
+     */
+    @Test
+    void findDtoByField() throws Exception {
+        //given
+        List<MemberDto> result = queryFactory
+                .select(Projections.fields(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member)
+                .fetch();
+        //when
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+
+        //then
+    }
+
+    /**
+     * Querydsl 빈 생성(Bean population)
+     * 생성자 사용
+     */
+    @Test
+    void findDtoByConstructor() throws Exception {
+        //given
+        List<MemberDto> result = queryFactory
+                .select(Projections.constructor(MemberDto.class,
+                        member.username,
+                        member.age))
+                .from(member)
+                .fetch();
+        //when
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+
+        //then
+    }
+
+    /**
+     * Querydsl 빈 생성(Bean population)
+     * 별칭이 다를 때
+     * 프로퍼티나, 필드 접근 생성 방식에서 이름이 다를 때 해결 방안
+     * ExpressionUtils.as(source,alias) : 필드나, 서브 쿼리에 별칭 적용
+     * username.as("memberName") : 필드에 별칭 적용
+     */
+    @Test
+    void findUserDto() throws Exception {
+
+        QMember memberSub = new QMember("memberSub");
+
+        //given
+        List<UserDto> result = queryFactory
+                .select(Projections.fields(UserDto.class,
+                        member.username.as("name"),
+                        //서브쿼리의 결과가 UserDto의 age에 매칭되어서 들어간다.
+                        ExpressionUtils.as(JPAExpressions
+                                .select(memberSub.age.max())
+                                .from(memberSub), "age")
+                ))
+                .from(member)
+                .fetch();
+
+        for (UserDto userDto : result) {
+            System.out.println("userDto = " + userDto);
+        }
+        //when
+
+        //then
+    }
+
 }
