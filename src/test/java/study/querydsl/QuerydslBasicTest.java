@@ -2,6 +2,10 @@ package study.querydsl;
 
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
+import com.querydsl.core.types.Expression;
+import com.querydsl.core.types.dsl.CaseBuilder;
+import com.querydsl.core.types.dsl.Expressions;
+import com.querydsl.core.types.dsl.NumberExpression;
 import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import org.aspectj.lang.annotation.Before;
@@ -615,5 +619,176 @@ public class QuerydslBasicTest {
 
 
         //then
+    }
+
+    /**
+     * Case 문
+     * select, 조건절(where), order by에서 사용 가능
+     * @throws Exception
+     */
+    @Test
+    void basicCase() throws Exception {
+        //given
+        List<String> result = queryFactory
+                .select(member.age
+                        .when(10).then("열살")
+                        .when(20).then("스무살")
+                        .otherwise("기타"))
+                .from(member)
+                .fetch();
+
+        /**
+         * select
+         *             case
+         *                 when member0_.age=? then ?
+         *                 when member0_.age=? then ?
+         *                 else '기타'
+         *             end as col_0_0_
+         *         from
+         *             member member0_
+         */
+        //when
+        for (String s : result) {
+            System.out.println("s = " + s);
+        }
+
+        //then
+    }
+
+    @Test
+    void complexCase() throws Exception {
+        //given
+        List<String> result = queryFactory.select(new CaseBuilder()
+                        .when(member.age.between(0, 20)).then("0~20살")
+                        .when(member.age.between(21, 30)).then("21~30살")
+                        .otherwise("기타"))
+                .from(member)
+                .fetch();
+
+        /**
+         * select
+         *             case
+         *                 when member0_.age between ? and ? then ?
+         *                 when member0_.age between ? and ? then ?
+         *                 else '기타'
+         *             end as col_0_0_
+         *         from
+         *             member member0_
+         */
+
+        //when
+        for (String s : result) {
+            System.out.println("s = " + s);
+        }
+        //then
+    }
+
+    /**
+     * 다음과 같은 순서로 회원을 출력하고 싶다면?
+     * 1. 0 ~ 30 살이 아닌 회원
+     * 2. 0 ~ 20살 회원 출력
+     * 3. 21 ~ 30살 회원 출력
+     * @throws Exception
+     */
+    @Test
+    void orderByWithCase() throws Exception {
+        //given
+        NumberExpression<Integer> rankPath = new CaseBuilder()
+                .when(member.age.between(0, 20)).then(2)
+                .when(member.age.between(21, 30)).then(1)
+                .otherwise(3);
+
+        List<Tuple> result = queryFactory
+                .select(member.username, member.age, rankPath)
+                .from(member)
+                .orderBy(rankPath.desc())
+                .fetch();
+
+        /**
+         * select
+         *             member0_.username as col_0_0_,
+         *             member0_.age as col_1_0_,
+         *             case
+         *                 when member0_.age between ? and ? then ?
+         *                 when member0_.age between ? and ? then ?
+         *                 else 3
+         *             end as col_2_0_
+         *         from
+         *             member member0_
+         *         order by
+         *             case
+         *                 when member0_.age between ? and ? then ?
+         *                 when member0_.age between ? and ? then ?
+         *                 else 3
+         *             end desc
+         */
+
+        //when
+        for (Tuple tuple : result) {
+            String username = tuple.get(member.username);
+            System.out.println("username = " + username);
+
+            Integer age = tuple.get(member.age);
+            System.out.println("age = " + age);
+
+            Integer rank = tuple.get(rankPath);
+            System.out.println("rank = " + rank);
+        }
+
+        //then
+    }
+
+    /**
+     * 상수
+     * Expressions.constant("xxx") 사용
+     */
+    @Test
+    void constant() throws Exception {
+        //given
+        List<Tuple> result = queryFactory
+                .select(member.username, Expressions.constant("A"))
+                .from(member)
+                .fetch();
+
+        /**
+         * select
+         *             member0_.username as col_0_0_
+         *         from
+         *             member member0_
+         */
+
+        //when
+        for (Tuple tuple : result) {
+            System.out.println("tuple = " + tuple);
+        }
+    }
+
+    /**
+     * 문자 더하기
+     *
+     * member.age.stringValue() 부분이 중요한데,
+     * 문자가 아닌 다른 타입들은 stringValue() 로 문자로 변환할 수 있다.
+     * 이 방법은 ENUM을 처리할 때도 자주 사용한다.
+     */
+    @Test
+    void concat() throws Exception {
+        List<String> result = queryFactory
+                .select(member.username.concat("_").concat(member.age.stringValue()))
+                .from(member)
+                .where(member.username.eq("member1"))
+                .fetch();
+
+        /**
+         * select
+         *             ((member0_.username||?)||cast(member0_.age as character varying)) as col_0_0_
+         *         from
+         *             member member0_
+         *         where
+         *             member0_.username=?
+         */
+
+        for (String s : result) {
+            System.out.println("s = " + s);
+        }
     }
 }
