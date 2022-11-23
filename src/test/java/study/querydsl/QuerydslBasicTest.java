@@ -1,10 +1,13 @@
 package study.querydsl;
 
+import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.Expression;
 import com.querydsl.core.types.ExpressionUtils;
+import com.querydsl.core.types.Predicate;
 import com.querydsl.core.types.Projections;
+import com.querydsl.core.types.dsl.BooleanExpression;
 import com.querydsl.core.types.dsl.CaseBuilder;
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.core.types.dsl.NumberExpression;
@@ -17,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
 import study.querydsl.dto.MemberDto;
+import study.querydsl.dto.QMemberDto;
 import study.querydsl.dto.UserDto;
 import study.querydsl.entitiy.Member;
 import study.querydsl.entitiy.QMember;
@@ -851,7 +855,8 @@ public class QuerydslBasicTest {
     @Test
     void findDtoByJpql() throws Exception {
         //given
-        List<MemberDto> memberDtos = em.createQuery("select new study.querydsl.dto.MemberDto(m.username, m.age) from Member m", MemberDto.class)
+        List<MemberDto> memberDtos = em.createQuery(
+                "select new study.querydsl.dto.MemberDto(m.username, m.age) from Member m", MemberDto.class)
                 .getResultList();
         //when
         for (MemberDto memberDto : memberDtos) {
@@ -947,6 +952,17 @@ public class QuerydslBasicTest {
                 .from(member)
                 .fetch();
 
+        /**
+         * select
+         *             member0_.username as col_0_0_,
+         *             (select
+         *                 max(member1_.age)
+         *             from
+         *                 member member1_) as col_1_0_
+         *         from
+         *             member member0_
+         */
+
         for (UserDto userDto : result) {
             System.out.println("userDto = " + userDto);
         }
@@ -955,4 +971,272 @@ public class QuerydslBasicTest {
         //then
     }
 
+    /**
+     * findDtoByConstructor는 Runtime에서만 오류를 발견.
+     * QMemberDto는 Querydsl에 의존성을 갖게됨.
+     * @throws Exception
+     */
+    @Test
+    void findQueryProjection() throws Exception {
+        //given
+        List<MemberDto> result = queryFactory
+                .select(new QMemberDto(member.username, member.age))
+                .from(member)
+                .fetch();
+        //when
+        
+        //then
+        for (MemberDto memberDto : result) {
+            System.out.println("memberDto = " + memberDto);
+        }
+    }
+
+    /**
+     * 동적쿼리
+     * 동적 쿼리를 해결하는 두가지 방식
+     * 1. *BooleanBuilder
+     * 2. Where 다중 파라미터 사용
+     */
+    @Test
+    void dynamicQuery_BooleanBuilder() throws Exception {
+        //given
+        String usernameParam = "member1";
+        Integer ageParam = null;
+
+        List<Member> result = searchMember1(usernameParam, ageParam);
+        assertThat(result.size()).isEqualTo(1);
+        //when
+
+        //then
+    }
+
+    private List<Member> searchMember1(String usernameCond, Integer ageCond) {
+
+        BooleanBuilder builder = new BooleanBuilder();
+
+        if(usernameCond != null) {
+            builder.and(member.username.eq(usernameCond));
+        }
+        if(ageCond != null) {
+            builder.and(member.age.eq(ageCond));
+        }
+
+        return queryFactory
+                .selectFrom(member)
+                .where(builder)
+                .fetch();
+    }
+
+    /**
+     * 동적쿼리
+     * 동적 쿼리를 해결하는 두가지 방식
+     * 1. BooleanBuilder
+     * 2. *Where 다중 파라미터 사용
+     *  - where 조건에 null 값은 무시된다.
+     *  - 메서드를 다른 쿼리에서도 재활용 할 수 있다.
+     *  - 쿼리 자체의 가독성이 높아진다.
+     */
+    @Test
+    void DynamicQuery_WhereParam() throws Exception {
+        //given
+        String username = "member1";
+        Integer ageParam = 10;
+
+        List<Member> result = searchMember2(username, ageParam);
+        assertThat(result.size()).isEqualTo(1);
+        //when
+
+        //then
+    }
+
+    private List<Member> searchMember2(String usernameCond, Integer ageCond) {
+        return queryFactory
+                .selectFrom(member)
+                //.where(usernameEq(usernameCond), ageEq(ageCond))
+                .where(allEq(usernameCond, ageCond))
+                .fetch();
+    }
+
+    private BooleanExpression ageEq(Integer ageCond) {
+        return ageCond == null ?  null : member.age.eq(ageCond);
+    }
+
+    private BooleanExpression usernameEq(String usernameCond) {
+        return usernameCond == null ? null : member.username.eq(usernameCond);
+    }
+
+    /**
+     * null 체크는 주의해서 처리해야함
+     */
+    private BooleanExpression allEq(String usernameCond, Integer ageCond) {
+        return usernameEq(usernameCond).and(ageEq(ageCond));
+    }
+
+    /**
+     * 벌크형 연산은 영속성 컨텍스트(1차 캐시)를 무시하고 바로 DB에 쿼리를 날린다.
+     * 따라서 DB의 상태와 영속성 컨텍스트의 상태가 다르다.
+     * @throws Exception
+     */
+    @Test
+    void bulkUpdate() throws Exception {
+        //given
+
+        long count = queryFactory
+                .update(member)
+                .set(member.username, "비회원")
+                .where(member.age.lt(28))
+                .execute();
+        // 쿼리 실행 후
+        // DB 상태
+        // member1 = 10 -> 비회원
+        // member2 = 20 -> 비회원
+        // member3 = 10 -> member3
+        // member4 = 20 -> member4
+        // 영속성 컨텍스트 상태
+        // member1 = 10 -> member1
+        // member2 = 20 -> member2
+        // member3 = 10 -> member3
+        // member4 = 20 -> member4
+
+        List<Member> result = queryFactory
+                .selectFrom(member)
+                .fetch();
+        // 동일한 PK의 DB에서 가져온 값과 영속성 컨텍스트의 값이 다른 경우
+        // DB의 값을 버린다. (영속성 컨텍트스가 우선순위가 높다.)
+        for (Member member1 : result) {
+            System.out.println("member1 = " + member1);
+        }
+
+        //따라서 초기화 하는 것이 좋다.
+        em.flush();
+        em.clear();
+
+        for (Member member1 : result) {
+            System.out.println("member1 = " + member1);
+        }
+
+        //when
+
+        //then
+    }
+
+    @Test
+    void bulkAdd() throws Exception {
+        //given
+        long count = queryFactory
+                .update(member)
+                .set(member.age, member.age.add(1))
+                .execute();
+
+        /**
+         * update
+         *             member
+         *         set
+         *             age=age+?
+         */
+
+        long count2 = queryFactory
+                .update(member)
+                .set(member.age, member.age.multiply(2))
+                .execute();
+        /**
+         * update
+         *             member
+         *         set
+         *             age=age*?
+         */
+        //when
+
+        //then
+    }
+
+    @Test
+    void bulkDelte() throws Exception {
+        //given
+        long count = queryFactory
+                .delete(member)
+                .where(member.age.gt(18))
+                .execute();
+
+        /**
+         * delete
+         *         from
+         *             member
+         *         where
+         *             age>?
+         */
+        //when
+
+        //then
+    }
+
+    /**
+     * SQL function 호출하기
+     * SQL function은 JPA와 같이 Dialect에 등록된 내용만 호출할 수 있다.
+     */
+    @Test
+    void sqlFunction() throws Exception {
+        //given
+        /**
+         * member.username에서 member라는 단어를 M으로 바꿔서 조회
+         * M.username 으로 조회
+         */
+        List<String> result = queryFactory
+                .select(
+                        Expressions.stringTemplate(
+                                "function('replace', {0}, {1}, {2})",
+                                member.username, "member", "M")
+                ).from(member)
+                .fetch();
+
+        /**
+         * select
+         *             replace(member0_.username,
+         *             ?,
+         *             ?) as col_0_0_
+         *         from
+         *             member member0_
+         */
+
+        for (String s : result) {
+            System.out.println("s = " + s);
+        }
+        //when
+
+        //then
+    }
+
+    @Test
+    void sqlFunction2() throws Exception {
+        //given
+        List<String> result = queryFactory
+                .select(member.username)
+                .from(member)
+//                .where(member.username.eq(
+//                        Expressions.stringTemplate(
+//                                "function('lower', {0})",
+//                                member.username)
+//                ))
+                // lower 같은 ansi 표준 함수들은 querydsl이 상당부분 내장하고 있다.
+                // 따라서 다음과 같이 처리해도 결과는 같다.
+                .where(member.username.eq(member.username.lower()))
+                .fetch();
+
+        /**
+         * select
+         *             member0_.username as col_0_0_
+         *         from
+         *             member member0_
+         *         where
+         *             member0_.username=lower(member0_.username)
+         */
+
+        for (String s : result) {
+            System.out.println("s = " + s);
+        }
+
+        //when
+
+        //then
+    }
 }
