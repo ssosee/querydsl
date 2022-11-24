@@ -2,11 +2,13 @@ package study.querydsl.repository;
 
 import com.querydsl.core.QueryResults;
 import com.querydsl.core.types.dsl.BooleanExpression;
+import com.querydsl.jpa.impl.JPAQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.support.PageableExecutionUtils;
 import org.springframework.util.StringUtils;
 import study.querydsl.dto.MemberSearchCondition;
 import study.querydsl.dto.MemberTeamDto;
@@ -101,20 +103,48 @@ public class MemberRepositoryImpl implements MemberRepositoryCustom {
                 .limit(pageable.getPageSize())
                 .fetch();
 
-        long count = queryFactory
+//        long count = queryFactory
+//                .select(member.count())
+//                .from(member)
+////                .leftJoin(member.team, team)
+//// 전체 카운트를 조회할 때 조인 쿼리를 줄일 수 있다면 상당한 효과가 있다.
+//                .where(
+//                        usernameEq(condition.getUsername()),
+//                        teamNameEq(condition.getTeamName()),
+//                        ageGoe(condition.getAgeGoe()),
+//                        ageLoe(condition.getAgeLoe())
+//                )
+//                .fetchCount();
+
+        JPAQuery<Long> countQuery = queryFactory
                 .select(member.count())
                 .from(member)
-//                .leftJoin(member.team, team)
-// 전체 카운트를 조회할 때 조인 쿼리를 줄일 수 있다면 상당한 효과가 있다.
                 .where(
                         usernameEq(condition.getUsername()),
                         teamNameEq(condition.getTeamName()),
                         ageGoe(condition.getAgeGoe()),
                         ageLoe(condition.getAgeLoe())
-                )
-                .fetchCount();
+                );
 
-        return new PageImpl<>(content, pageable, count);
+        /**
+         * count 쿼리가 생략 가능한 경우 생략해서 처리
+         * PageableExecutionUtils를 사용하면 count 쿼리 최적화 가능
+         * 내부적으로 count가 필요없으면 조회해오지 않는다.
+         * 그 이유는 람다를 사용하여 게으른 호출로 인하여 실제 사용되기 전까지는 함수가 실행되지 않는다.
+         *
+         * 다음 2가지 경우에 count 쿼리가 실행되지 않는다.
+         * 페이지 시작이면서 컨텐츠 사이즈가 페이지 사이즈 보다 작을때
+         * e.g)
+         *  페이지 시작(0)이면서 컨텐츠 사이즈(3)가 페이지 사이즈(10)보다 작다면 컨텐츠 사이즈(3)가 카운트 갯수
+         *
+         * 마지막 페이지 일때(offset + 컨텐츠 사이즈 = 카운트)
+         * e.g)
+         *  예를 들어 전체 데이터는 103개이고, 페이지 사이즈는 10이라고 한다면
+         *  마지막 페이지 일때는 offset(100), 컨텐츠 사이즈(3)이라서 카운트는 103으로 이해 하고 있는데 맞는 내용 인가요?
+         */
+        return PageableExecutionUtils.getPage(content, pageable, countQuery::fetchCount);
+        
+        //return new PageImpl<>(content, pageable, count);
     }
 
     private BooleanExpression usernameEq(String username) {
